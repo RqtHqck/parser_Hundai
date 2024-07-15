@@ -1,0 +1,17 @@
+# Virtual enviroment
+venv/
+
+# Git&Python
+.git/
+.idea/
+__pycache__/
+
+# Project files
+data/*
+# чтобы не удалялась пустая папка data, которая нужна для работы проекта
+!data/.gitkeep
+!data/BMW/.gitkeep
+settings/app.log
+test.py
+threading
+multiproc
