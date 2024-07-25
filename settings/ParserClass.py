@@ -1,10 +1,13 @@
 # BASE LIBRARY
 import random
+import os
 import json
 import threading
 import time
 # REQUEST&BS4
 import requests
+import retrying
+from retry import retry
 from bs4 import BeautifulSoup
 import fake_useragent
 # SELENIUM
@@ -17,10 +20,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import StaleElementReferenceException
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
+from fake_useragent import UserAgent
+from settings.LoggerClass import Logger
 
-
-
-class Parser:
+class Parser(Logger):
     def __init__(self):
         self.USER = fake_useragent.UserAgent().random
         self.COOCKIE = {
@@ -42,26 +45,11 @@ class Parser:
             # Это поле добавлено для имитации более полного набора заголовков, иногда помогает серверу принять запрос
         }
         self.file_path = None
+        self.data_folder_path = os.path.join('data', 'HUNDAI_eu')
+        self.storage_path = None
         self.lock_treads = threading.Lock()
 
-    def logger(self, text, saveonly=False, first=False, infunction=False, mode='a'):
-        """Система логирования"""
-        try:
-            current_time = time.strftime('%Y-%m-%d %H:%M:%S')
-            with open('settings/app.log', mode, encoding='utf-8') as f:
-                if first:
-                    f.write(f'\n\n{current_time} - {text}\n')
-                else:
-                    f.write(f'{current_time} - {text}\n')
-                if not saveonly:
-                    print(f'\t{current_time} - {text}') if infunction else print(f'{current_time} - {text}')
-                else:
-                    pass
-        except FileNotFoundError:
-            print("ERROR::FileNotFoundError.")
-        except Exception as e:
-            print(f"ERROR was ecountered::\n{e}")
-
+    @retry(tries=10, delay=3, backoff=2, exceptions=(requests.exceptions.RequestException,))
     def fetch_data(self, url, data=None, session=None, headers=None, coockies=None, return_session=False):
         """Выполняет запрос и возвращает контент страницы"""
         headers = headers or self.HEADERS
@@ -86,6 +74,7 @@ class Parser:
                         first=False, infunction=True)
             raise
 
+
     def save_data(self, name: str, path: str, src):
         """Функция сохраняет .json в папку data"""
         try:
@@ -97,10 +86,11 @@ class Parser:
                         infunction=True)
             raise
 
+
     def read_data(self, name, path, extension='json'):
         """Функция читает файл и возвращает .json-файл в виде словаря"""
         try:
-            with open(f'{path}/{name}', 'r', encoding='utf-8') as file:
+            with open(f'{path}/{name}.json', 'r', encoding='utf-8') as file:
                 if extension == 'json':
                     src = json.load(file)
                 else:
@@ -114,24 +104,51 @@ class Parser:
                         infunction=True)
             raise
 
+
     def setup_driver(self):
         """
         Настраивает Chrome WebDriver для работы в headless-режиме и возвращает экземпляр драйвера.
         """
-        # Автоматическая установка последней версии ChromeDriver
-
         # Настройка параметров Chrome
-        chrome_options = Options()
-        chrome_options.add_argument('--headless')  # Запуск в headless-режиме
-        chrome_options.add_argument('--log-level=3')
-        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        chrome_options.add_argument(f'user-agent={user_agent}')
+        options = Options()
+        options.add_argument('--headless')   # Запуск в headless-режиме (без графического интерфейса).
+        options.add_argument('--disable-gpu')  # Отключение использования GPU (требуется для работы в headless-режиме).
+        options.add_argument('--no-sandbox')  # Отключение песочницы (для среды CI/CD).
+        options.add_argument('--disable-dev-shm-usage')  # Отключение использования /dev/shm (для среды CI/CD).
+        options.add_argument('--allow-running-insecure-content')  # Разрешение выполнения небезопасного контента.
+        options.add_argument('--ignore-certificate-errors')  # Игнорирование ошибок сертификатов.
+        options.add_argument('--log-level=3')  # Уровень логирования (3 = предупреждения и выше).
+        options.add_argument('--disable-software-rasterizer')  # Отключение программного растеризатора.
+        options.add_argument('--disable-extensions')  # Отключение всех расширений.
+        options.add_argument('--disable-infobars')  # Отключение информационных панелей.
+        options.add_argument('--disable-browser-side-navigation')  # Отключение боковой навигации в браузере.
+        options.add_argument('--disable-renderer-backgrounding')  # Отключение фона рендеринга.
+        options.add_argument('--disable-background-timer-throttling')  # Отключение ограничения таймеров в фоновом режиме.
+        options.add_argument('--disable-backgrounding-occluded-windows')  # Отключение фоновой обработки скрытых окон.
+        options.add_argument('--disable-client-side-phishing-detection')  # Отключение защиты от фишинга на стороне клиента.
+        options.add_argument('--disable-sync')  # Отключение синхронизации браузера.
+        options.add_argument('--disable-web-resources')  # Отключение веб-ресурсов.
+        options.add_argument('--disable-translate')  # Отключение автоматического перевода страниц.
+        options.add_argument('--disable-default-apps')  # Отключение стандартных приложений Chrome.
+        options.add_argument('--disable-hang-monitor')  # Отключение монитора зависаний.
+        options.add_argument('--disable-prompt-on-repost')  # Отключение запросов при повторной отправке данных.
+        options.add_argument('--disable-popup-blocking')  # Отключение блокировки всплывающих окон.
+        options.add_argument('--disable-features=VizDisplayCompositor')  # Отключение функции VizDisplayCompositor.
+        options.add_argument('--disable-features=site-per-process')  # Отключение функции site-per-process.
+        options.add_argument('--blink-settings=imagesEnabled=false')  # Отключение загрузки изображений.
+        options.add_argument('--disable-software-rasterizer')
+
+        USER_AGENT = UserAgent()
+        options.add_argument(f'user-agent={USER_AGENT.random}')
+
+
         # Создание экземпляра Chrome WebDriver
-        service = Service(ChromeDriverManager().install())  # Автоматическое обнаружение и установка ChromeDriver
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        # self.logger('Веб-драйвер для selenium был создан', saveonly=False, first=False, infunction=True)
+        service = Service(ChromeDriverManager().install()) # Автоматическое обнаружение и установка ChromeDriver
+        driver = webdriver.Chrome(service=service, options=options)
+
         return driver
 
+    @retrying.retry(stop_max_attempt_number=6, wait_fixed=5000)
     def selenium_click_and_get_page(self, url, button_selector, driver, retries=3):
         driver.get(url)
         attempt = 0
@@ -161,6 +178,8 @@ class Parser:
                 return None
         return None
 
+
+    @retrying.retry(stop_max_attempt_number=6, wait_fixed=5000)
     def selenium_crossing(self, url, js_request: str, driver):
         """
         Использование selenium для перехода по js-наполняемой ссылке.
@@ -192,3 +211,4 @@ class Parser:
             self.logger(f"Произошла ошибка в функции selenium_crossing с  url:{url}, и js:{js_request}: {str(e)}",
                         saveonly=False, first=False, infunction=True)
             return None
+        

@@ -10,8 +10,9 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.utils.exceptions import SheetTitleException
 # THREADING
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Lock
-from multiprocessing import Pool
+# MULTIPROCESSUING
+from concurrent.futures import ProcessPoolExecutor
+from multiprocessing import Manager
 import multiprocessing
 # REQUEST&BS4
 import requests
@@ -29,6 +30,7 @@ from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 # MY IMPORTS
 from settings.ParserClass import Parser
+from settings.SQLiteClass import SQLiteDB
 
 URL = 'https://www.elcats.ru'   #URL сайта
 MODELS_URL = "https://www.elcats.ru/hyundai/"   #URL с модельным рядом
@@ -50,7 +52,7 @@ def parse_all_models_into_file(url, parser):
     """
     Парсит все модели со страницы моделей HUNDAI
     Возвращает список models и список urls,
-    """
+    """ 
     try:
         # Находим таблицу
         soup = BeautifulSoup(parser.fetch_data(url).text, 'lxml') 
@@ -63,92 +65,100 @@ def parse_all_models_into_file(url, parser):
         source = {}
         for model, url in zip(models, urls):
             source[model] = url
-        parser.save_data(name="Models", path='data', src=source)
-        
-        return [models, urls]
+        parser.save_data(name="Serias", path='data', src=source)
     except Exception as e:
         parser.logger(f'Ошибка при выполнении функции parse_all_models_into_file: {e}')
         raise
     
-
-def choose_model_by_user(args):
-    """
-    Выбор модели бренда пользователем.
-    Возвращает модель и ссылку на модель
-    """
-    try:
-        # Отрисовываем варианты моделей для выбора из USER_CHOOSE.env
-        models, urls = args
-        for i, (model, url) in enumerate(zip(models, urls), start=1):
-            print(f"[#{i}]: {model}")
-    except Exception as e:
-        print(f'Ошибка при выполнении функции choose_model_by_user: {e}')
-        raise
     
-    # Для сервера используем предвыбор
-    load_dotenv(dotenv_path='settings/USER_CHOOSE.env')
-    choice = int(os.getenv('KEY', 1)) -1
-
-    try:
-        model = models[choice]
-        model_url = urls[choice]
-        return model, model_url
-    except Exception as e:
-        print(f'Ошибка при выполнении функции choose_model_by_user: {e}')
-        raise
-
-    # Для пользователя используем выбор
-    # while True:
-    #     try:
-    #         # Предлагаем выбор   
-    #         choice = int(input('Выберите номер модели из предложенных: ')) - 1
-    #         # Проверка корректности выбора модели
-    #         if 0 <= choice < len(models):
-    #             model = models[choice]
-    #             model_url = urls[choice]
-    #             print(f"\nВыбранная модель: [#{choice + 1}]: {model}")
-    #             return model, model_url
-    #         else:
-    #             logger("Некорректный номер. Попробуйте снова.", saveonly=False, first=False, infunction=True)
-    #     except (ValueError, IndexError):
-    #         logger("Некорректный номер. Введите числовое значение.", saveonly=False, first=False, infunction=True)
-    #     except Exception as e:
-    #         logger(f'Ошибка при выполнении функции choose_model_by_user: {e}', saveonly=False, first=False, infunction=True)
-    #         raise
- 
-                
-def parse_region(url, parser):
+def parse_region(url, parser=parser):
     """
     Парсит всё в регионе (модификации)
     Возвращает 
     """
+    def format_year(year_str):
+        """Обрабатывает дату, чтобы убиралось '-'."""
+        if '-' in year_str:
+            parts = year_str.split('-')
+            if len(parts) == 2:
+                start_year = parts[0].strip()
+                end_year = parts[1].strip()
+                if not end_year:  # If there's no end year
+                    return start_year  # Just return the start year
+                return f"{start_year} - {end_year}"  # Return the range as is
+        return year_str  # Return single year as is
+    
     try:
+        print(url)
         soup = BeautifulSoup(parser.fetch_data(url).text, 'lxml')
         table = soup.find('div', id="content").find('fieldset').find('table', cellpadding="6").find_all('tr')
         regions = table[1].find_all('td')
         table = table[3:]
-
+    except Exception as e:
+        parser.logger(f'Ошибка при выполнении функции parse_region: Нет выбора региона\n{e}', saveonly=False, first=False, infunction=True)
+        return [], [], []
+    try:
         # Проверка есть ли регион европа
         regions = [item.find('label').text for item in regions]
-        if regions and 'ЕВРОПА' in regions:
+        if 'ЕВРОПА' not in regions:
+            return [], [], []
+        else:
             js_functions = [item.find('a')['href'] for item in table]
-            years = [year.find_all('td')[-1].text.strip() for year in table if year]
-            regex = re.compile(r"submit\('([^']*)','([^']*)'\)")
-            url_list = []
+                        
+            # ГОД
+            years = []
+            for year in table:
+                if year:
+                    year = format_year(year.find_all('td')[-1].text.strip())
+                    years.append(year)
+                    
+            regex_for_url_and_name = re.compile(r"submit\('([^']*)','([^']*)'\)")
+            urls_list = []
             models_name = []
             for js in js_functions:
-                match = regex.search(js)
+                match = regex_for_url_and_name.search(js)
                 if match:
                     arg1 = match.group(1)
                     arg2 = match.group(2)
+                    # ССЫЛКА
                     region_url = f"https://www.elcats.ru/hyundai/Options.aspx?Code={arg1}&Title={arg2}"
-                    url_list.append(region_url)
+                    urls_list.append(region_url)
                     models_name.append(arg2)
-            return models_name, url_list, years
-        raise LookupError('В выбранной модели нету региона "ЕВРОПА"')
+            return models_name, urls_list, years
     except Exception as e:
         parser.logger(f'Ошибка при выполнении функции parse_region: {e}', saveonly=False, first=False, infunction=True)
-        raise
+        return [], [], []   
+
+
+def collect_items_dict():
+    # Read series data
+    serias_dict = parser.read_data(name='Serias', path='data')
+    
+    models_dict = {}
+
+    # Запуск потоков для быстрого прохода по моделям и сбора словаря
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        futures = {executor.submit(parse_region, seria_url): seria_name for seria_name, seria_url in serias_dict.items()}
+        
+        for future in as_completed(futures):
+            seria_name = futures[future]
+            try:
+                models_name, urls_list, years = future.result()
+                
+                # Создаём в словаре ключ по серии
+                if seria_name not in models_dict:
+                    models_dict[seria_name] = []
+                
+                # Добавляем данные в ключ по серии
+                for mdl_name, url, year in zip(models_name, urls_list, years):
+                    models_dict[seria_name].append((mdl_name, url, year))
+            except Exception as e:
+                print(f'Error processing {seria_name}: {e}')
+                
+    # Удаление пустых ключей, в которых нету региона Европа
+    models_dict = {k: v for k, v in models_dict.items() if v}
+    # Сохраняем словарь где ключ - серия, а значение [название модели, год, url, год]
+    parser.save_data(name="Models", path='data', src=models_dict)
 
 
 def detail_process(task, lock, parser):
@@ -427,47 +437,101 @@ def add_to_new_sheet(file_path, sheet_name, row, lock, parser):
 def parse():
     try:
         parser = Parser()
-        parser.logger('|---Программа начала свою работу---|', False, True)
-        driver = parser.setup_driver()
-        time = Time()
-        lock = parser.lock_treads
-        # ---------------РАЗБОР МОДЕЛЕЙ НА СТРАНИЦЕ---------------
-        parser.logger('|---Получение всех моделей...')
-        model_name_for_print, MODEL_URL = choose_model_by_user(parse_all_models_into_file(MODELS_URL, parser))
-        models_name, region_urls, years = parse_region(MODEL_URL, parser)
-        parser.logger(f'|---Парсим детали {model_name_for_print}...', saveonly=False, first=False)
+        # parser.start_time_save()      
+        # parser.logger('|---Программа начала свою работу---|', False, True)
+        # time = Time()
+        # # ---------------РАЗБОР МОДЕЛЕЙ НА СТРАНИЦЕ---------------
+        # parse_all_models_into_file(MODELS_URL, parser)
+        # parser.logger('|---Получение всех моделей...')
+        # collect_items_dict()
+        models_dict = parser.read_data(name='Models', path='data')
 
-        # Добавляем книгу по названию модели
-        file_path = os.path.join('data', 'BMW', f'{model_name_for_print}.xlsx')
-        parser.file_path = file_path
-        create_new_book(file_path=file_path, sheet_name=model_name_for_print, parser=parser)
+        # Устанавливаем хранилище базы данных и создаём бд
+        Parser.storage_path = os.path.join('data', 'HUNDAI_eu', f'HUNDAI_eu_eu.db')
+        SQLiteDB.create_empty_database(Parser.storage_path)
 
-        # Создание задания для поточной обработки
-        tasks = [(model_name, region_url, year) for model_name, region_url, year in zip(models_name, region_urls, years)]
-        THREADS = 12
-        lock = Lock()
-        with ThreadPoolExecutor(max_workers=THREADS) as executor:
-            futures = [executor.submit(detail_process, task, lock, parser) for task in tasks]
-        for future in futures:
-            try:
-                future.result()
-            except Exception as e:
-                print(f"Ошибка потока: {e}")  
-                
-        time.end()
-        driver.quit()
-        parser.logger(f'|------------------------------------------------------|', saveonly=False, first=False, infunction=False)
-        parser.logger(f'|---Модели были успешно собраны по пути data/BMW/output.xlsx.', saveonly=False, first=False, infunction=False)
 
+        PROCESSES = 1
+        manager = Manager()
+        file_lock = manager.Lock()
+
+        last_table_name = SQLiteDB.fetch_existed_tables_and_continue(Parser.storage_path)
+        passed = False
+        
+        for seria_name, seria_models_list in models_dict.items():
+            tasks = []
+
+            # Очистка названия серии для создания таблицы
+            seria_name = SQLiteDB.transliterate_and_sanitize_table_name(seria_name)
+            print(seria_name)
+        #     # ПРОВЕРКА СУЩЕСТВУЮЩИХ СУБД ДЛЯ ВОСССТАНОВЛЕНИЯ 
+        #     if last_table_name is None:
+        #         SQLiteDB.create_table(Parser.storage_path, seria_name)
+        #     elif seria_name == last_table_name:
+        #         SQLiteDB.delete_table(Parser.storage_path, seria_name)
+        #         SQLiteDB.create_table(Parser.storage_path, seria_name)
+        #         passed = True
+        #     elif not passed:
+        #         continue
+        #     else:
+        #         SQLiteDB.create_table(Parser.storage_path, seria_name)
+
+        #     for model_js in models_js:
+        #         months_page_url, model_name = parse_month_url(f"{URL}/{AUTO_BRAND}", model_js)
+        #         if months_page_url is not   None:
+        #             tasks.append((months_page_url, clear_model_name_for_book(model_name), seria_name))
+
+        #     with ProcessPoolExecutor(max_workers=PROCESSES) as executor:
+        #         futures = [executor.submit(process_model, task, file_lock) for task in tasks]
+        #         for future in as_completed(futures):
+        #             try:
+        #                 future.result()
+        #             except Exception as e:
+        #                 print(f"Ошибка потока: {e}")
+
+        #     tasks.clear()
+
+        # time.end()
+
+
+
+
+
+
+        # # models_name, region_urls, years = parse_region(MODEL_URL, parser)
+        # # parser.logger(f'|---Парсим детали {model_name_for_print}...', saveonly=False, first=False)
+
+        # # # Добавляем книгу по названию модели
+        # # # file_path = os.path.join('data', 'HUNDAI_EU', f'{model_name_for_print}.xlsx')
+        # # # parser.file_path = file_path
+        # # create_new_book(file_path=file_path, sheet_name=model_name_for_print, parser=parser)
+
+        # # Создание задания для поточной обработки
+        # tasks = [(model_name, region_url, year) for model_name, region_url, year in zip(models_name, region_urls, years)]
+        # THREADS = 12
+        # lock = Lock()
+        # with ThreadPoolExecutor(max_workers=THREADS) as executor:
+        #     futures = [executor.submit(detail_process, task, lock, parser) for task in tasks]
+        # for future in futures:
+        #     try:
+        #         future.result()
+        #     except Exception as e:
+        #         print(f"Ошибка потока: {e}")  
+        # parser.end_time_save()            
+        # time.end()
+        # driver.quit()
+        # parser.logger(f'|------------------------------------------------------|', saveonly=False, first=False, infunction=False)
+        # parser.logger(f'|---Модели были успешно собраны по пути data/HUNDAI_EU_EU/HUNDAI_EU.db', saveonly=False, first=False, infunction=False)
+    
     except KeyboardInterrupt:
         parser.logger('\nKeyboardInterrupt')
-    except Exception as e:
-        parser.logger(f'|---Ошибка в работе программы\n')
-    finally:
-        driver.quit()
-        parser.logger(f'|------------------------------------------------------|', saveonly=False, first=False, infunction=False)
-        parser.logger('|---Завершение работы программы...', saveonly=False, first=False, infunction=False)
-    
+    # except Exception as e:
+    #     parser.logger(f'|---Ошибка в работе программы\n')
+    # finally:
+    #     driver.quit()
+    #     parser.logger(f'|------------------------------------------------------|', saveonly=False, first=False, infunction=False)
+    #     parser.logger('|---Завершение работы программы...', saveonly=False, first=False, infunction=False)
+
 
 if __name__ == "__main__":
     multiprocessing.set_start_method('spawn')
