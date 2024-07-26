@@ -44,10 +44,7 @@ class Parser(Logger):
             "TE": "Trailers",
             # Это поле добавлено для имитации более полного набора заголовков, иногда помогает серверу принять запрос
         }
-        self.file_path = None
-        self.data_folder_path = os.path.join('data', 'HUNDAI_eu')
         self.storage_path = None
-        self.lock_treads = threading.Lock()
 
     @retry(tries=10, delay=3, backoff=2, exceptions=(requests.exceptions.RequestException,))
     def fetch_data(self, url, data=None, session=None, headers=None, coockies=None, return_session=False):

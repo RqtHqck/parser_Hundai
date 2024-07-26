@@ -8,6 +8,7 @@ __pycache__/
 
 # Project files
 data/*
+/parserRU.py
 # чтобы не удалялась пустая папка data, которая нужна для работы проекта
 !data/.gitkeep
 !data/BMW/.gitkeep

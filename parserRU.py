@@ -430,7 +430,7 @@ def parse():
         parser.logger('|---Программа начала свою работу---|', False, True)
         driver = parser.setup_driver()
         time = Time()
-        lock = parser.lock_treads
+
         # ---------------РАЗБОР МОДЕЛЕЙ НА СТРАНИЦЕ---------------
         parser.logger('|---Получение всех моделей...')
         model_name_for_print, MODEL_URL = choose_model_by_user(parse_all_models_into_file(MODELS_URL, parser))
