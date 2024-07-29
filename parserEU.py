@@ -81,20 +81,22 @@ def parse_region(url):
                 return f"{start_year} - {end_year}"  # Return the range as is
         return year_str  # Return single year as is
     
-    try:
-        print(url)
-        soup = BeautifulSoup(parser.fetch_data(url).text, 'lxml')
-        table = soup.find('div', id="content").find('fieldset').find('table', cellpadding="6").find_all('tr')
-        regions = table[1].find_all('td')
-        table = table[3:]
-    except Exception as e:
-        parser.logger(f'Ошибка при выполнении функции parse_region: Нет выбора региона\n{e}', saveonly=False, first=False, infunction=False)
-        return [], [], []
+    # try:
+    soup = BeautifulSoup(parser.fetch_data(url).text, 'lxml')
+    table = soup.find('div', id="content").find('fieldset').find('table', cellpadding="6").find_all('tr')
+    # except Exception as e:
+    #     parser.logger(f'Ошибка при выполнении функции parse_region: У серии нет выбора региона', saveonly=False, first=False, infunction=False)
+    #     return [], [], []
+    
+    # Получаем таблицу и регионы
+    regions = table[1].find_all('td')
+    table = table[3:]
+
     try:
         # Проверка есть ли регион европа
         regions = [item.find('label').text for item in regions]
         if 'ЕВРОПА' not in regions:
-            return [], [], []
+            return [], [], []   
         else:
             js_functions = [item.find('a')['href'] for item in table]
                         
@@ -116,21 +118,20 @@ def parse_region(url):
                     # ССЫЛКА
                     region_url = f"https://www.elcats.ru/hyundai/Options.aspx?Code={arg1}&Title={arg2}"
                     urls_list.append(region_url)
-                    models_name.append(arg2)
+                    models_name.append(arg1)
             return models_name, urls_list, years
     except Exception as e:
-        parser.logger(f'Ошибка при выполнении функции parse_region: {e}', saveonly=False, first=False, infunction=False)
+        parser.logger(f'Ошибка при выполнении функции parse_region: {e}', saveonly=True, first=False, infunction=False)
         return [], [], []   
 
 
 def collect_items_dict():
-    # Read series data
     serias_dict = parser.read_data(name='Serias', path='data')
     
     models_dict = {}
 
     # Запуск потоков для быстрого прохода по моделям и сбора словаря
-    with ThreadPoolExecutor(max_workers=12) as executor:
+    with ThreadPoolExecutor(max_workers=14) as executor:
         futures = {executor.submit(parse_region, seria_url): seria_name for seria_name, seria_url in serias_dict.items()}
         
         for future in as_completed(futures):
@@ -146,17 +147,16 @@ def collect_items_dict():
                 for mdl_name, url, year in zip(models_name, urls_list, years):
                     models_dict[seria_name].append((mdl_name, url, year))
             except Exception as e:
-                print(f'Error processing {seria_name}: {e}')
+                parser.logger(f'Error processing {seria_name}: {e}', saveonly=True)
                 
-    # Удаление пустых ключей, в которых нету региона Европа
+    # Удаление пустых ключей
     models_dict = {k: v for k, v in models_dict.items() if v}
     # Сохраняем словарь где ключ - серия, а значение [название модели, год, url, год]
     parser.save_data(name="Models", path='data', src=models_dict)
+    parser.logger(f"Было найдено [{len(models_dict)}] серий автомобиля [{AUTO_BRAND}] региона ЕВРОПА")
 
 
-def process_model(task, lock):
-    # Настройка драйвера и парсера
-    
+def process_model(task, lock, db_path):
     # Получает аргументы из потока
     seria_name, model_name, model_url, issue_date = task
     parser.logger(f'\n|ПРОЦЕСС:: {seria_name}||{model_name}||{issue_date}', saveonly=False, first=False,
@@ -170,25 +170,25 @@ def process_model(task, lock):
 
 
     tasks = []
-    THREADS = 14
+    THREADS = 16
     # Собираем tasks из sub_cat и js переходов на страницу таблицы с деталью
     for sub_cat_title, sub_cat_cont_and_details_js in details_dict.items():
         sub_cut_title_cont_data = sub_cat_cont_and_details_js[0]
         js_data = sub_cat_cont_and_details_js[1]
         for s_c_t_cont, detail_js in zip(sub_cut_title_cont_data, js_data):
             
-            tasks.append((seria_name, model_name, model_url, issue_date, f"{sub_cat_title}|{s_c_t_cont}", detail_js, details_url))                    
+            tasks.append((seria_name, model_name, model_url, issue_date, f"{sub_cat_title} | {s_c_t_cont}", detail_js, details_url))                    
         
     with ThreadPoolExecutor(max_workers=THREADS) as executor:
-        futures = [executor.submit(process_inner_details, task, lock) for task in tasks]
+        futures = [executor.submit(process_inner_details, task, lock, db_path) for task in tasks]
         for future in as_completed(futures):
             try:
                 future.result()
             except Exception as e:
-                print(f"Ошибка потока: {e}")
+                parser.logger(f"Ошибка потока: {e}")
 
 
-def process_inner_details(task, lock):
+def process_inner_details(task, lock, db_path):
     try:
         driver = parser.setup_driver()
         seria_name, model_name, model_url, issue_date, sub_cat_title, detail_js, details_url = task
@@ -197,11 +197,8 @@ def process_inner_details(task, lock):
         
         try:
             conditional_part_url = parser.selenium_crossing(details_url, detail_js, driver)
-            print(conditional_part_url)
         except:
             parser.logger(f'Ошибка при переходе на страницу запчасти с таблицей деталей\nurl:{details_url}, js:{detail_js} ')
-
-        part_mage_url
 
         # Добавяем существующие данные в DATA
         DATA = [seria_name, AUTO_BRAND, model_name, issue_date, sub_cat_title, model_url]
@@ -210,7 +207,7 @@ def process_inner_details(task, lock):
             part_url = conditional_part_url
             part_mage_url = parse_part_picture(URL, conditional_part_url)
             DATA.extend([part_url, part_mage_url])
-            parse_table(DATA, lock)
+            parse_table(DATA, lock, db_path)
             
         elif 'Unit.aspx' in conditional_part_url:
             # Если это страница с выбором юнита, выбираем и дальше парсим таблицу
@@ -224,12 +221,11 @@ def process_inner_details(task, lock):
 
                 part_mage_url = parse_part_picture(URL, part_url)
                 DATA.extend([part_url, part_mage_url])
-                parse_table(DATA, lock)
+                parse_table(DATA, lock, db_path)
     except Exception as e:
         parser.logger(f"Приозошла ошибка в функции process_inner_details: {e}")
     finally:
-        if driver:
-            driver.quit()
+        driver.quit()
 
 
 def parse_complectation(url, driver):
@@ -296,7 +292,7 @@ def parse_part_picture(gen_url, part_url):
 
     try:
         soup = BeautifulSoup(parser.fetch_data(part_url).text, 'lxml')
-        part_image_url = gen_url + str(soup.find('img', id='ctl00_cphMasterPage_imgParts')['src'])
+        part_image_url = gen_url + '/' + str(soup.find('img', id='ctl00_cphMasterPage_imgParts')['src'])[3:]
         return part_image_url
     except Exception as e:
         parser.logger(f"Произошла ошибка в функции parse_part_picture: {e}")
@@ -337,7 +333,7 @@ def collect_playload(part_url):
         parser.logger(f"Произошла ошибка в функции collect_playload: {e}")
 
 
-def parse_table(DATA, lock):
+def parse_table(DATA, lock, db_path):
     """
     Парсит таблицу деталей
     Возвращает список деталей (5шт)
@@ -360,20 +356,21 @@ def parse_table(DATA, lock):
             one_table_data = []  # Список деталей для текущего ID
             for row in rows:  # один ряд деталей
                 details_list = [detail.text.strip() for detail in row]
-                sorted_lst = [details_list[i] for i in [1, 0, 4, 2]]    # Детали в правильном порядке
+                sorted_lst = [details_list[i] if details_list[i] != '' else '-' for i in [1, 0, 4, 2]]    # Детали в правильном порядке
+
                 one_table_data.append(sorted_lst)  # Добавляем список данных одной детали в row_lst
             for detail_row in one_table_data:
                 row_to_write = []
                 row_to_write.extend(DATA[1:])
-                row_to_write.extend(row)
-                parser.logger(f"[+]ДЕТАЛЬ:: {row_to_write[1]}||{row_to_write[2]}||{row_to_write[3]}{row_to_write[7]}", saveonly=False, first=False,
-                    infunction=2)
+                row_to_write.extend(detail_row)
+                
                 
                 # ДОБАВЛЕНИЕ В SQLite
                 table_name = DATA[0]
-                data = row_to_write
-                path = Parser.storage_path
-                SQLiteDB.add_data_to_table(path, table_name, data)
+                data = [row_to_write[i] for i in [0, 1, 2, 3, 4, 7, 8, 9, 10, 5, 6]]
+                SQLiteDB.add_data_to_table(db_path, table_name, data)
+                parser.logger(f"[+]ДЕТАЛЬ:: {row_to_write[1]}||{row_to_write[2]}||{row_to_write[3]}|{row_to_write[7]}", saveonly=False, first=False,
+                    infunction=2)
                 # add_to_new_sheet(str(parser.file_path), cleared_model_name, row_to_write, lock, parser)
 
     except Exception as e:
@@ -390,8 +387,8 @@ def parse():
         models_dict = parser.read_data(name='Models', path='data')
 
         # Устанавливаем хранилище базы данных и создаём бд
-        Parser.storage_path = os.path.join('data', 'HUNDAI_eu', f'HUNDAI_eu.db')
-        SQLiteDB.create_empty_database(Parser.storage_path)
+        db_path = Parser.storage_path = os.path.join('data', 'HUNDAI_eu', f'HUNDAI_eu.db')
+        SQLiteDB.create_empty_database(db_path)
 
         # Начсинаем отсчитывать время работы
         parser.start_time_save() 
@@ -400,7 +397,7 @@ def parse():
         manager = Manager()
         file_lock = manager.Lock()
 
-        last_table_name = SQLiteDB.fetch_existed_tables_and_continue(Parser.storage_path)
+        last_table_name = SQLiteDB.fetch_existed_tables_and_continue(db_path)
         passed = False
 
         for seria_name, seria_models_list in models_dict.items():
@@ -410,15 +407,15 @@ def parse():
             
             # ===ПРОВЕРКА СУЩЕСТВУЮЩИХ СУБД ДЛЯ ВОСССТАНОВЛЕНИЯ===
             if last_table_name is None:
-                SQLiteDB.create_table(Parser.storage_path, seria_name)
+                SQLiteDB.create_table(db_path, seria_name)
             elif seria_name == last_table_name:
-                SQLiteDB.delete_table(Parser.storage_path, seria_name)
-                SQLiteDB.create_table(Parser.storage_path, seria_name)
+                SQLiteDB.delete_table(db_path, seria_name)
+                SQLiteDB.create_table(db_path, seria_name)
                 passed = True
             elif not passed:
                 continue
             else:
-                SQLiteDB.create_table(Parser.storage_path, seria_name)
+                SQLiteDB.create_table(db_path, seria_name)
             # =====================================================
             
             # ===Создание задачи===
@@ -429,13 +426,15 @@ def parse():
                 tasks.append((seria_name, mdl_name, mdl_url, mdl_year))
             # =====================
             
+            # Вынесение в процесс парсинг серии
             with ProcessPoolExecutor(max_workers=PROCESSES) as executor:
-                futures = [executor.submit(process_model, task, file_lock) for task in tasks]
+                futures = [executor.submit(process_model, task, file_lock, db_path) for task in tasks]
                 for future in as_completed(futures):
                     try:
                         future.result()
                     except Exception as e:
-                        print(f"Ошибка потока: {e}")
+                        parser.logger(f"Ошибка потока: {e}")
+            # ==================================
 
             tasks.clear()
         parser.end_time_save()
@@ -454,3 +453,4 @@ def parse():
 if __name__ == "__main__":
     multiprocessing.set_start_method('spawn')
     parse()
+

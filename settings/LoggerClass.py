@@ -11,7 +11,7 @@ class Logger:
         import time
         current_time = time.strftime('%Y-%m-%d %H:%M:%S')
         with open(cls.time_work_path, mode=mode, encoding=encoding) as f:
-            f.write(f'\n\n{current_time} :: Program start.\n')
+            f.write(f'\n\n{current_time} :: Program start')
        
     @classmethod       
     def end_time_save(cls,  mode='a', encoding='utf-8'):
@@ -19,7 +19,7 @@ class Logger:
         import time
         current_time = time.strftime('%Y-%m-%d %H:%M:%S')
         with open(cls.time_work_path, mode=mode, encoding=encoding) as f:
-            f.write(f'\n\n{current_time} :: Program end.\n')
+            f.write(f'\n\n{current_time} :: Program end\n\n')
        
        
     @classmethod

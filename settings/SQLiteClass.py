@@ -50,20 +50,19 @@ class SQLiteDB(Logger):
 
                 # Создаем таблицу
                 sql_request = f"""CREATE TABLE {table_name} (
-                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                    auto_brand TEXT NOT NULL,
-                                    auto_model TEXT NOT NULL,
-                                    auto_issue_date TEXT NOT NULL,
-                                    part_sub_cat_title TEXT NOT NULL,
-                                    model_url TEXT NOT NULL,
-                                    part_index TEXT NOT NULL,
-                                    part_title TEXT NOT NULL,
-                                    part_code TEXT NOT NULL,
-                                    part_info TEXT NOT NULL,
-                                    part_count INTEGER NOT NULL,
-                                    part_url TEXT NOT NULL,
-                                    part_image_url TEXT NOT NULL
-                                 );"""
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            auto_brand TEXT NOT NULL,
+                            auto_model TEXT NOT NULL,
+                            auto_issue_date TEXT NOT NULL,
+                            part_sub_cat_title TEXT NOT NULL,
+                            model_url TEXT NOT NULL,
+                            part_title TEXT NOT NULL,
+                            part_code TEXT NOT NULL,
+                            part_info TEXT NOT NULL,
+                            part_count TEXT NOT NULL,
+                            part_url TEXT NOT NULL,
+                            part_image_url TEXT NOT NULL
+                        );"""
                 conn.execute(sql_request)
                 cursor.execute("INSERT OR IGNORE INTO metadata (table_name) VALUES (?);", (table_name,))
                 conn.commit()
@@ -114,12 +113,12 @@ class SQLiteDB(Logger):
                 # Вставляем данные в таблицу
                 sql_request = f"""INSERT INTO {table_name} (
                                     auto_brand, auto_model, auto_issue_date, part_sub_cat_title,
-                                    model_url , part_index, part_title, part_code,
+                                    model_url , part_title, part_code,
                                     part_info, part_count, part_url, part_image_url
-                                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
-                conn.executemany(sql_request, data)
+                                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+                conn.execute(sql_request, data)
                 conn.commit()
-                cls.logger(f'Данные были добавлены в таблицу "{table_name}".', saveonly=False, first=False,
+                cls.logger(f'Данные были добавлены в таблицу "{table_name}".', saveonly=True, first=False,
                        infunction=True)
 
         except sqlite3.OperationalError as e:
