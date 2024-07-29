@@ -81,23 +81,45 @@ def parse_region(url):
                 return f"{start_year} - {end_year}"  # Return the range as is
         return year_str  # Return single year as is
     
-    # try:
+    
+    def take_us_reg(url):
+        try:
+            data = {
+                "__EVENTTARGET": "ctl00$cphMasterPage$rblCountry$2",
+                "__EVENTARGUMENT": "",
+                "__LASTFOCUS": "",
+                "__VIEWSTATE": "/wEPDwUKMTM0MzExOTAzMw9kFgJmD2QWAgIDD2QWBgIBDxYCHgRocmVmBSxodHRwczovL3d3dy5leGlzdC5ydS9DYXRhbG9nL1RPL2NhcnMvSHl1bmRhaWQCBQ8WAh4JaW5uZXJodG1sBWc8dT48YSBocmVmPSIvaHl1bmRhaS9kZWZhdWx0LmFzcHgiPtCa0LDRgtCw0LvQvtCzINCw0LLRgtC+0LfQsNC/0YfQsNGB0YLQtdC5IEhZVU5EQUk8L2E+PC91PiA+IFZFUkFDUlVaZAIHD2QWBAIBDxBkEBUEBtCh0KjQkAzQmtCQ0J3QkNCU0JAI0JDQl9CY0K8b0JHQm9CY0JbQndCY0Jkg0JLQntCh0KLQntCaFQQDSE1BA0hBQwNHRU4DTUVTFCsDBGdnZ2cWAQICZAIDDxYCHgtfIUl0ZW1Db3VudAIBFgJmD2QWAmYPFQoJS0dFTlBFTjA3CUtHRU5QRU4wNyhbRU5dICBWRVJBQ1JVWiAwNzogT0NULjIwMDYtICgyMDA3LTIwMTMpCUtHRU5QRU4wNwlLR0VOUEVOMDcJS0dFTlBFTjA3KFtFTl0gIFZFUkFDUlVaIDA3OiBPQ1QuMjAwNi0gKDIwMDctMjAxMykoW0VOXSAgVkVSQUNSVVogMDc6IE9DVC4yMDA2LSAoMjAwNy0yMDEzKQQyMDA3BDIwMTNkZGg6UbNC5+Y0vwEwhcbVBwo61xw5Oh+nYiaBGvBCtCnR",
+                "__VIEWSTATEGENERATOR": "F6EAE574",
+                "__EVENTVALIDATION": "/wEdAAdIybO/QsUEy5VO00TtsD2U2+OZKIEU0e7EF4cCUiuOj4d35pOOAyrWKZKrHhW9n3aYOW51DtJDt/YvIzbu+cq73ThJThyyF0xuFFA6L1qO3gHP36FmoSBQ3JEGpNv5qEAU+XYRsG4zEr/StuAnAAG+f2rMmVTR8MxI274qNG5++ycHFaQ/TR4gaSaAyCl4FlA=",
+                "ctl00$cphMasterPage$rblCountry": "HMA"
+            }
+            
+            try:
+                response = requests.post(url, data=data)
+                response.raise_for_status()
+                return response
+            except Exception as e:
+                parser.logger(f'Ошибка при выполнении функции take_us_reg при переходе по url:{url}: {e}', saveonly=False, first=False,
+                    infunction=True)
+                raise
+        except Exception as e:
+            parser.logger(f'Ошибка при выполнении функции take_us_reg: {e}', saveonly=False, first=False, infunction=True)
+            raise
+
     soup = BeautifulSoup(parser.fetch_data(url).text, 'lxml')
     table = soup.find('div', id="content").find('fieldset').find('table', cellpadding="6").find_all('tr')
-    # except Exception as e:
-    #     parser.logger(f'Ошибка при выполнении функции parse_region: У серии нет выбора региона', saveonly=False, first=False, infunction=False)
-    #     return [], [], []
-    
-    # Получаем таблицу и регионы
     regions = table[1].find_all('td')
-    table = table[3:]
+    
 
     try:
         # Проверка есть ли регион европа
         regions = [item.find('label').text for item in regions]
-        if 'ЕВРОПА' not in regions:
+        if 'США' not in regions:
             return [], [], []   
         else:
+            
+            soup = BeautifulSoup(take_us_reg(url).text, 'lxml')
+            table = soup.find('div', id="content").find('fieldset').find('table', cellpadding="6").find_all('tr')[3:]
             js_functions = [item.find('a')['href'] for item in table]
                         
             # ГОД
@@ -118,8 +140,8 @@ def parse_region(url):
                     # ССЫЛКА
                     region_url = f"https://www.elcats.ru/hyundai/Options.aspx?Code={arg1}&Title={arg2}"
                     urls_list.append(region_url)
-                    models_name.append(arg1)
                     parser.logger(f"[+] Модель {arg1} серии {arg2}")
+                    models_name.append(arg1)
             return models_name, urls_list, years
     except Exception as e:
         parser.logger(f'Ошибка при выполнении функции parse_region: {e}', saveonly=True, first=False, infunction=False)
@@ -155,7 +177,7 @@ def collect_items_dict():
     models_dict = {k: v for k, v in models_dict.items() if v}
     # Сохраняем словарь где ключ - серия, а значение [название модели, год, url, год]
     parser.save_data(name="Models", path='data', src=models_dict)
-    parser.logger(f"Было найдено [{len(models_dict)}] серий автомобиля [{AUTO_BRAND}] региона ЕВРОПА")
+    parser.logger(f"Было найдено [{len(models_dict)}] серий автомобиля [{AUTO_BRAND}] региона США")
 
 
 def process_model(task, lock, db_path):
@@ -389,7 +411,7 @@ def parse():
         models_dict = parser.read_data(name='Models', path='data')
 
         # Устанавливаем хранилище базы данных и создаём бд
-        db_path = Parser.storage_path = os.path.join('data', 'HUNDAI_eu', f'HUNDAI_eu.db')
+        db_path = Parser.storage_path = os.path.join('data', 'HUNDAI_us', f'HUNDAI_us.db')
         SQLiteDB.create_empty_database(db_path)
 
         # Начсинаем отсчитывать время работы
@@ -441,7 +463,7 @@ def parse():
             tasks.clear()
         parser.end_time_save()
         parser.logger(f'|------------------------------------------------------|', saveonly=False, first=False, infunction=False)
-        parser.logger(f'|---Модели были успешно собраны по пути data/HUNDAI_EU/HUNDAI_EU.db', saveonly=False, first=False, infunction=False)
+        parser.logger(f'|---Модели были успешно собраны по пути data/HUNDAI_US/HUNDAI_US.db', saveonly=False, first=False, infunction=False)
 
     except KeyboardInterrupt:
         parser.logger('\nKeyboardInterrupt')

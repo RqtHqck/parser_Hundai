@@ -26,7 +26,7 @@ else
 fi
 
 echo "Running script..."
-python parserRU.py
+python parserUS.py
 
 # Деактивация виртуального окружения
 deactivate

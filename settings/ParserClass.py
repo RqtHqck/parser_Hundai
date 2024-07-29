@@ -146,7 +146,7 @@ class Parser(Logger):
         return driver
 
     @retrying.retry(stop_max_attempt_number=6, wait_fixed=5000)
-    def selenium_click_and_get_page(self, url, button_selector, driver, retries=3):
+    def selenium_click_and_get_page(self, url: str, button_selector: str, driver, retries=3):
         driver.get(url)
         attempt = 0
         while attempt < retries:
@@ -177,7 +177,7 @@ class Parser(Logger):
 
 
     @retrying.retry(stop_max_attempt_number=6, wait_fixed=5000)
-    def selenium_crossing(self, url, js_request: str, driver):
+    def selenium_crossing(self, url: str, js_request: str, driver):
         """
         Использование selenium для перехода по js-наполняемой ссылке.
         """

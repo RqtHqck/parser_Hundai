@@ -28,7 +28,7 @@ if exist requirements.txt (
 
 REM Запуск парсера
 echo Running parser...
-python parserRU.py
+python parserUS.py
 
 REM Проверка кода завершения последней команды
 if %ERRORLEVEL% neq 0 (
