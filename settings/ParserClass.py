@@ -44,6 +44,24 @@ class Parser(Logger):
             "TE": "Trailers",
             # Это поле добавлено для имитации более полного набора заголовков, иногда помогает серверу принять запрос
         }
+        self.PROXY = {
+            'http': 'http://uHqzJP:47uwvj@45.133.224.185:8000',
+            'http1': 'http://uHqzJP:47uwvj@45.133.226.128:8000',
+            'http2': 'http://uHqzJP:47uwvj@45.135.29.73:8000',
+            'http3': 'http://uHqzJP:47uwvj@45.135.29.207:8000',
+            'http4': 'http://uHqzJP:47uwvj@45.135.30.179:8000',
+            'http5': 'http://uHqzJP:47uwvj@45.135.30.27:8000',
+            'http6': 'http://uHqzJP:47uwvj@45.135.31.240:8000',
+            'http7': 'http://uHqzJP:47uwvj@45.135.30.134:8000',
+            'http8': 'http://uHqzJP:47uwvj@45.135.31.187:8000',
+            'http9': 'http://uHqzJP:47uwvj@45.135.28.91:8000',
+            'http10': 'http://uHqzJP:47uwvj@45.135.30.156:8000',
+            'http11': 'http://uHqzJP:47uwvj@45.135.30.108:8000',
+            'http12': 'http://uHqzJP:47uwvj@45.135.31.248:8000',
+            'http13': 'http://uHqzJP:47uwvj@45.135.29.99:8000',
+            'http14': 'http://uHqzJP:47uwvj@45.135.29.228:8000',
+            'http15': 'http://uHqzJP:47uwvj@45.135.31.237:8000',
+        }
         self.storage_path = None
 
     @retry(tries=10, delay=3, backoff=2, exceptions=(requests.exceptions.RequestException,))
@@ -51,14 +69,15 @@ class Parser(Logger):
         """Выполняет запрос и возвращает контент страницы"""
         headers = headers or self.HEADERS
         coockies = coockies or self.COOCKIE
+        proxies = {'http': random.choice(list(self.PROXY.values()))}
         try:
             self.logger(f'Выполнение запроса по url {url}', saveonly=True, first=False, infunction=True)
             if not session:
                 session = requests.Session()
             if data:
-                response = session.post(url, headers=headers, data=data, cookies=coockies, timeout=60)
+                response = session.post(url, headers=headers, data=data, cookies=coockies, proxies=proxies, timeout=60)
             else:
-                response = session.get(url, headers=headers, cookies=coockies, timeout=60)
+                response = session.get(url, headers=headers, cookies=coockies, proxies=proxies, timeout=60)
 
             response.raise_for_status()
             time.sleep(random.uniform(1, 3))
